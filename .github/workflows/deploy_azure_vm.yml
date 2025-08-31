@@ -1,0 +1,59 @@
+name: Deploy to Azure VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    # Setup Node.js for backend
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    # Install backend dependencies
+    - name: Install backend dependencies
+      run: |
+        cd backend
+        npm install
+
+    # Install frontend dependencies and build
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm install
+        npm run build
+
+    # Deploy to Azure VM
+    - name: Deploy to Azure VM
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.AZURE_VM_HOST }}
+        username: ${{ secrets.AZURE_VM_USER }}
+        key: ${{ secrets.AZURE_SSH_KEY }}
+        port: 22
+        script: |
+          mkdir -p ~/retailtech
+          cd ~/retailtech
+
+          # Sync backend
+          rsync -av --delete ./backend/ ./backend/
+
+          # Sync frontend build
+          rsync -av --delete ./frontend/build/ ./frontend/build/
+
+          # Install backend dependencies
+          cd backend
+          npm install
+
+          # Restart backend using PM2
+          pm2 stop retailtech || true
+          pm2 start app.js --name retailtech
