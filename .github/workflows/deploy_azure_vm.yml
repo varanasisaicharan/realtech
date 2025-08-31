@@ -6,54 +6,53 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    # Setup Node.js for backend
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-    # Install backend dependencies
-    - name: Install backend dependencies
-      run: |
-        cd backend
-        npm install
-
-    # Install frontend dependencies and build
-    - name: Build frontend
-      run: |
-        cd frontend
-        npm install
-        npm run build
-
-    # Deploy to Azure VM
-    - name: Deploy to Azure VM
-      uses: appleboy/ssh-action@v0.1.6
-      with:
-        host: ${{ secrets.AZURE_VM_HOST }}
-        username: ${{ secrets.AZURE_VM_USER }}
-        key: ${{ secrets.AZURE_SSH_KEY }}
-        port: 22
-        script: |
-          mkdir -p ~/retailtech
-          cd ~/retailtech
-
-          # Sync backend
-          rsync -av --delete ./backend/ ./backend/
-
-          # Sync frontend build
-          rsync -av --delete ./frontend/build/ ./frontend/build/
-
-          # Install backend dependencies
-          cd backend
+      # Build frontend before sending to VM
+      - name: Build frontend
+        working-directory: frontend
+        run: |
           npm install
+          npm run build
 
-          # Restart backend using PM2
-          pm2 stop retailtech || true
-          pm2 start app.js --name retailtech
+      # Package everything (backend + built frontend)
+      - name: Package project
+        run: tar -czf retailtech.tar.gz backend frontend/build
+
+      - name: Copy files to Azure VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AZURE_VM_IP }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          source: "retailtech.tar.gz"
+          target: "/home/${{ secrets.AZURE_VM_USER }}/"
+
+      - name: Deploy on Azure VM
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.AZURE_VM_IP }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.AZURE_VM_USER }}
+            rm -rf retailtech
+            mkdir retailtech
+            tar -xzf retailtech.tar.gz -C retailtech
+            cd retailtech/backend
+            npm install
+            pm2 stop retailtech || true
+            pm2 start index.js --name retailtech --watch
+            sudo rm -rf /var/www/html/*
+            sudo cp -r ../frontend/build/* /var/www/html/
+            echo "Deployment successful" >> deploy.log
