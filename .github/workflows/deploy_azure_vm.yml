@@ -18,14 +18,14 @@ jobs:
         with:
           node-version: '18'
 
-      # Build frontend before sending to VM
+      # Build frontend before sending
       - name: Build frontend
         working-directory: frontend
         run: |
           npm install
           npm run build
 
-      # Package everything (backend + built frontend)
+      # Package backend + built frontend
       - name: Package project
         run: tar -czf retailtech.tar.gz backend frontend/build
 
@@ -52,7 +52,7 @@ jobs:
             cd retailtech/backend
             npm install
             pm2 stop retailtech || true
-            pm2 start index.js --name retailtech --watch
+            pm2 start app.js --name retailtech --watch
             sudo rm -rf /var/www/html/*
             sudo cp -r ../frontend/build/* /var/www/html/
             echo "Deployment successful" >> deploy.log
